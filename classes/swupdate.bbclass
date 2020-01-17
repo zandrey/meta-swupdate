@@ -137,6 +137,9 @@ python do_swuimage () {
             if not add_image_to_swu(deploydir, image, s):
                 bb.fatal("swupdate cannot find %s image file" % image)
 
+    # Combine all version files into one, that could be parsed later during sw-description processing
+    combine_pkg_versions_to_file(deploydir)
+
     prepare_sw_description(d, s, list_for_cpio)
 
     line = 'for i in ' + ' '.join(list_for_cpio) + '; do echo $i;done | cpio -ov -H crc >' + os.path.join(imgdeploydir,d.getVar('IMAGE_NAME', True) + '.swu')
