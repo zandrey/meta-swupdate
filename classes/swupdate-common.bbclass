@@ -37,7 +37,7 @@ def swupdate_expand_bitbake_variables(d, s):
         for line in f:
             found = False
             while True:
-                m = re.match(r"^(?P<before_placeholder>.+)@@(?P<bitbake_variable_name>\w+)@@(?P<after_placeholder>.+)$", line)
+                m = re.match(r"^(?P<before_placeholder>.+)<bb-var>(?P<bitbake_variable_name>\w+)</bb-var>(?P<after_placeholder>.+)$", line)
                 if m:
                     bitbake_variable_value = d.getVar(m.group('bitbake_variable_name'), True)
                     if bitbake_variable_value is None:
@@ -47,7 +47,7 @@ def swupdate_expand_bitbake_variables(d, s):
                     found = True
                     continue
                 else:
-                    m = re.match(r"^(?P<before_placeholder>.+)@@(?P<bitbake_variable_name>.+)\[(?P<flag_var_name>.+)\]@@(?P<after_placeholder>.+)$", line)
+                    m = re.match(r"^(?P<before_placeholder>.+)<bb-var>(?P<bitbake_variable_name>.+)\[(?P<flag_var_name>.+)\]</bb-var>(?P<after_placeholder>.+)$", line)
                     if m:
                        bitbake_variable_value = (d.getVarFlag(m.group('bitbake_variable_name'), m.group('flag_var_name'), True) or "")
                        if bitbake_variable_value is None:
@@ -65,9 +65,55 @@ def swupdate_expand_bitbake_variables(d, s):
         for line in write_lines:
             f.write(line)
 
+def combine_pkg_versions_to_file(deploydir):
+    verdir = os.path.join(deploydir, 'swupdate-versions')
+    if not os.path.isdir(verdir):
+        return False # no folder containing collected version files
+    with open(os.path.join(verdir,'sw-versions'), 'w') as outversfile:
+        for f in os.listdir(verdir):
+            with open(os.path.join(verdir,f)) as verfile:
+                for line in verfile:
+                    outversfile.write(line)
+    return True
+
+def find_pkg_ver_identifier(file, id):
+    with open(file, 'r') as f:
+        for line in f:
+            if id in line:
+                return line.split()[1]
+    return None
+
+def swupdate_expand_version_fields(d, s):
+    write_lines = []
+    deploydir = d.getVar('DEPLOY_DIR_IMAGE', True)
+
+    with open(os.path.join(s, "sw-description"), 'r') as f:
+        import re
+        for line in f:
+            found = False
+            while True:
+                m = re.match(r"^(?P<before_placeholder>.+)<pkg-ver>(?P<version_package_name>.+)</pkg-ver>(?P<after_placeholder>.+)$", line)
+                if m:
+                    version_package_val = find_pkg_ver_identifier(os.path.join(deploydir, 'swupdate-versions/sw-versions'), m.group('version_package_name'))
+                    if version_package_val is None:
+                       bb.fatal("Version of package [%s] not set! Perhaps you forgot to inherit 'swupdate-ver-collector' for it." % (m.group('version_package_name')))
+                    line = m.group('before_placeholder') + version_package_val + m.group('after_placeholder')
+                    found = True
+                    continue
+                else:
+                    if found:
+                        line = line + "\n"
+                    break
+            write_lines.append(line)
+
+    with open(os.path.join(s, "sw-description"), 'w+') as f:
+        for line in write_lines:
+            f.write(line)
+
 def prepare_sw_description(d, s, list_for_cpio):
 
     swupdate_expand_bitbake_variables(d, s)
+    swupdate_expand_version_fields(d, s)
 
     for file in list_for_cpio:
         if file != 'sw-description' and swupdate_is_hash_needed(s, file):
